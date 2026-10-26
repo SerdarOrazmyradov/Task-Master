@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>To-Do List with Reminders</title>
+  <!-- Tailwind CSS & DaisyUI CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="min-h-screen bg-base-200 text-base-content p-4 sm:p-6 md:p-10 transition-colors duration-300">
+  <div class="max-w-3xl mx-auto space-y-6">
+    
+    <!-- Top Header & Controls -->
+    <header class="flex flex-col sm:flex-row justify-between items-center gap-4 bg-base-100 p-5 rounded-2xl shadow-md">
+      <div class="flex items-center gap-3">
+        <div class="p-3 bg-primary/10 text-primary rounded-xl">
+          <i data-lucide="check-square" class="w-7 h-7"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Task Master</h1>
+          <p class="text-xs text-base-content/60">Organize your daily tasks & reminders</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-3">
+        <!-- Theme Switcher Toggle -->
+        <label class="swap swap-rotate btn btn-ghost btn-circle">
+          <input type="checkbox" id="theme-toggle" />
+          <i data-lucide="sun" class="swap-on w-5 h-5"></i>
+          <i data-lucide="moon" class="swap-off w-5 h-5"></i>
+        </label>
+        
+        <!-- Add Task Button -->
+        <button onclick="openModal()" class="btn btn-primary gap-2">
+          <i data-lucide="plus" class="w-5 h-5"></i> Add Task
+        </button>
+      </div>
+    </header>
+
+    <!-- Banner Toast Container for Overdue/Upcoming Notifications -->
+    <div id="toast-container" class="space-y-2"></div>
+
+    <!-- Main Content Area -->
+    <main class="bg-base-100 p-6 rounded-2xl shadow-md space-y-6">
+      
+      <!-- Toolbar: Filter Tabs & Stats -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-base-200">
+        <!-- Filter Tabs -->
+        <div class="tabs tabs-boxed bg-base-200">
+          <button class="tab filter-tab tab-active" data-filter="all">All</button>
+          <button class="tab filter-tab" data-filter="active">Active</button>
+          <button class="tab filter-tab" data-filter="completed">Completed</button>
+        </div>
+        
+        <!-- Actions & Counters -->
+        <div class="flex items-center justify-between sm:justify-end gap-4">
+          <span class="text-sm font-medium text-base-content/70">
+            <span id="remaining-count" class="badge badge-primary badge-sm mr-1">0</span> items left
+          </span>
+          <button onclick="clearCompleted()" class="btn btn-ghost btn-xs text-error hover:bg-error/10 gap-1">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear Completed
+          </button>
+        </div>
+      </div>
+
+      <!-- Task List Container -->
+      <ul id="task-list" class="space-y-3">
+        <!-- Dynamic Tasks will be rendered here -->
+      </ul>
+
+      <!-- Empty State -->
+      <div id="empty-state" class="hidden text-center py-12 space-y-3">
+        <div class="inline-flex p-4 bg-base-200 rounded-full text-base-content/40">
+          <i data-lucide="inbox" class="w-10 h-10"></i>
+        </div>
+        <p class="text-base-content/60 font-medium">No tasks found. Add one to get started!</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Task Modal (Create / Edit) -->
+  <dialog id="task-modal" class="modal modal-bottom sm:modal-middle">
+    <div class="modal-box">
+      <h3 id="modal-title" class="font-bold text-lg mb-4">Add New Task</h3>
+      <form id="task-form" onsubmit="handleFormSubmit(event)" class="space-y-4">
+        <input type="hidden" id="task-id">
+        
+        <!-- Task Title -->
+        <div class="form-control">
+          <label class="label"><span class="label-text font-medium">Title</span></label>
+          <input type="text" id="task-title-input" placeholder="e.g., Pay utility bills" class="input input-bordered w-full" required />
+        </div>
+
+        <!-- Task Description -->
+        <div class="form-control">
+          <label class="label"><span class="label-text font-medium">Description (Optional)</span></label>
+          <textarea id="task-desc-input" placeholder="Add additional details..." class="textarea textarea-bordered h-24 w-full"></textarea>
+        </div>
+
+        <!-- Due Date and Time -->
+        <div class="form-control">
+          <label class="label"><span class="label-text font-medium">Due Date & Time</span></label>
+          <input type="datetime-local" id="task-due-input" class="input input-bordered w-full" />
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="modal-action">
+          <button type="button" onclick="closeModal()" class="btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Task</button>
+        </div>
+      </form>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
+
+  <!-- Application Logic -->
+  <script>
+    // State management
+    let tasks = JSON.parse(localStorage.getItem('tasks_data')) || [];
+    let currentFilter = 'all';
+
+    // DOM Elements
+    const taskList = document.getElementById('task-list');
+    const emptyState = document.getElementById('empty-state');
+    const remainingCount = document.getElementById('remaining-count');
+    const taskModal = document.getElementById('task-modal');
+    const taskForm = document.getElementById('task-form');
+    const themeToggle = document.getElementById('theme-toggle');
+
+    // Initialize App
+    document.addEventListener('DOMContentLoaded', () => {
+      initTheme();
+      renderTasks();
+      checkReminders();
+      lucide.createIcons();
+
+      // Setup filter button listeners
+      document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+          document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('tab-active'));
+          e.target.classList.add('tab-active');
+          currentFilter = e.target.dataset.filter;
+          renderTasks();
+        });
+      });
+
+      // Periodically check for due/overdue reminders every minute
+      setInterval(checkReminders, 60000);
+    });
+
+    // Theme Switcher Logic
+    function initTheme() {
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      themeToggle.checked = savedTheme === 'dark';
+      
+      themeToggle.addEventListener('change', (e) => {
+        const theme = e.target.checked ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+      });
+    }
+
+    // Save tasks to LocalStorage
+    function saveTasks() {
+      localStorage.setItem('tasks_data', JSON.stringify(tasks));
+      renderTasks();
+      checkReminders();
+    }
+
+    // Render task items list
+    function renderTasks() {
+      taskList.innerHTML = '';
+      
+      // Filter logic
+      const filteredTasks = tasks.filter(task => {
+        if (currentFilter === 'active') return !task.completed;
+        if (currentFilter === 'completed') return task.completed;
+        return true;
+      });
+
+      // Update remaining items count
+      const activeCount = tasks.filter(t => !t.completed).length;
+      remainingCount.textContent = activeCount;
+
+      // Toggle Empty State
+      if (filteredTasks.length === 0) {
+        emptyState.classList.remove('hidden');
+      } else {
+        emptyState.classList.add('hidden');
+      }
+
+      // Populate Task Elements
+      filteredTasks.forEach(task => {
+        const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !task.completed;
+        const li = document.createElement('li');
+        li.className = `flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-base-200/50 hover:bg-base-200 rounded-xl transition-all border border-base-300/50 gap-4 ${task.completed ? 'opacity-60' : ''}`;
+
+        // Date formatting & status badge
+        let dateDisplay = '';
+        if (task.dueDate) {
+          const formattedDate = new Date(task.dueDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+          dateDisplay = `
+            <span class="inline-flex items-center gap-1 text-xs ${isOverdue ? 'text-error font-semibold' : 'text-base-content/60'}">
+              <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+              ${formattedDate} ${isOverdue ? '(Overdue)' : ''}
+            </span>
+          `;
+        }
+
+        li.innerHTML = `
+          <div class="flex items-start gap-3 w-full sm:w-auto">
+            <input type="checkbox" ${task.completed ? 'checked' : ''} 
+                   onchange="toggleTask('${task.id}')" 
+                   class="checkbox checkbox-primary mt-1" />
+            <div class="space-y-1">
+              <h4 class="font-semibold text-base ${task.completed ? 'line-through text-base-content/50' : ''}">${escapeHtml(task.title)}</h4>
+              ${task.description ? `<p class="text-sm text-base-content/70 ${task.completed ? 'line-through' : ''}">${escapeHtml(task.description)}</p>` : ''}
+              ${dateDisplay}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 self-end sm:self-center">
+            <button onclick="openModal('${task.id}')" class="btn btn-ghost btn-xs btn-circle text-base-content/70 hover:text-primary">
+              <i data-lucide="edit-3" class="w-4 h-4"></i>
+            </button>
+            <button onclick="deleteTask('${task.id}')" class="btn btn-ghost btn-xs btn-circle text-base-content/70 hover:text-error">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        `;
+        taskList.appendChild(li);
+      });
+
+      lucide.createIcons();
+    }
+
+    // Modal Control Functions
+    function openModal(id = null) {
+      taskForm.reset();
+      document.getElementById('task-id').value = '';
+      document.getElementById('modal-title').textContent = 'Add New Task';
+
+      if (id) {
+        const task = tasks.find(t => t.id === id);
+        if (task) {
+          document.getElementById('task-id').value = task.id;
+          document.getElementById('task-title-input').value = task.title;
+          document.getElementById('task-desc-input').value = task.description || '';
+          document.getElementById('task-due-input').value = task.dueDate || '';
+          document.getElementById('modal-title').textContent = 'Edit Task';
+        }
+      }
+      taskModal.showModal();
+    }
+
+    function closeModal() {
+      taskModal.close();
+    }
+
+    // Create & Update Task Handler
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById('task-id').value;
+      const title = document.getElementById('task-title-input').value.trim();
+      const description = document.getElementById('task-desc-input').value.trim();
+      const dueDate = document.getElementById('task-due-input').value;
+
+      if (!title) return;
+
+      if (id) {
+        // Edit existing task
+        tasks = tasks.map(t => t.id === id ? { ...t, title, description, dueDate } : t);
+      } else {
+        // Create new task
+        const newTask = {
+          id: Date.now().toString(),
+          title,
+          description,
+          dueDate,
+          completed: false,
+          createdAt: new Date().toISOString()
+        };
+        tasks.unshift(newTask);
+      }
+
+      saveTasks();
+      closeModal();
+    }
+
+    // Toggle Task Status
+    function toggleTask(id) {
+      tasks = tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t);
+      saveTasks();
+    }
+
+    // Delete Single Task
+    function deleteTask(id) {
+      tasks = tasks.filter(t => t.id !== id);
+      saveTasks();
+    }
+
+    // Clear All Completed Tasks
+    function clearCompleted() {
+      tasks = tasks.filter(t => !t.completed);
+      saveTasks();
+    }
+
+    // Check for Overdue Tasks & Show Alert Banners
+    function checkReminders() {
+      const toastContainer = document.getElementById('toast-container');
+      toastContainer.innerHTML = '';
+
+      const now = new Date();
+      const overdueTasks = tasks.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < now);
+
+      if (overdueTasks.length > 0) {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-warning shadow-sm py-2 px-4 rounded-xl flex items-center justify-between';
+        alert.innerHTML = `
+          <div class="flex items-center gap-2">
+            <i data-lucide="bell-ring" class="w-5 h-5 text-warning-content"></i>
+            <span class="text-sm font-medium">You have ${overdueTasks.length} overdue task(s)!</span>
+          </div>
+        `;
+        toastContainer.appendChild(alert);
+        lucide.createIcons();
+      }
+    }
+
+    // Helper: Utility to escape HTML strings safely
+    function escapeHtml(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+  </script>
+</body>
+</html>
